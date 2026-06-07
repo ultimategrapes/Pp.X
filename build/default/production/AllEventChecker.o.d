@@ -8,8 +8,8 @@ build/default/production/AllEventChecker.o: AllEventChecker.c \
  ../ECE118/include/ES_Port.h ../ECE118/include/ES_PostList.h \
  ../ECE118/include/ES_PriorTables.h ../ECE118/include/ES_Queue.h \
  ../ECE118/include/ES_ServiceHeaders.h \
- C:/Users/asus/Documents/ece118/Pp.X/ES_Configure.h \
- C:/Users/asus/Documents/ece118/Pp.X/MainHSM.h \
+ C:/Users/asus/Documents/ECE118Final/Pp.X/ES_Configure.h \
+ C:/Users/asus/Documents/ECE118Final/Pp.X/MainHSM.h \
  ../ECE118/include/ES_TattleTale.h peashooter.h
 
 ES_Configure.h:
@@ -50,9 +50,9 @@ MainHSM.h:
 
 ../ECE118/include/ES_ServiceHeaders.h:
 
-C:/Users/asus/Documents/ece118/Pp.X/ES_Configure.h:
+C:/Users/asus/Documents/ECE118Final/Pp.X/ES_Configure.h:
 
-C:/Users/asus/Documents/ece118/Pp.X/MainHSM.h:
+C:/Users/asus/Documents/ECE118Final/Pp.X/MainHSM.h:
 
 ../ECE118/include/ES_TattleTale.h:
 

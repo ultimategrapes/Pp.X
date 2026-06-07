@@ -139,7 +139,7 @@
         <property key="enable-unroll-loops" value="false"/>
         <property key="exclude-floating-point" value="false"/>
         <property key="extra-include-directories"
-                  value="C:\Users\asus\Documents\ece118\Pp.X;..\ECE118\include;..\ECE118\src"/>
+                  value="..\ECE118\src;C:\Users\asus\Documents\ECE118Final\Pp.X;..\ECE118\include"/>
         <property key="generate-16-bit-code" value="false"/>
         <property key="generate-micro-compressed-code" value="false"/>
         <property key="isolate-each-function" value="false"/>
