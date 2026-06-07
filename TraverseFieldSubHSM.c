@@ -200,7 +200,7 @@ ES_Event RunTraverseFieldSubHSM(ES_Event ThisEvent) {
                 InitAvoidSubHSM();
                 // now put the machine into the actual initial state
                 //                                nextState = RideFront;
-                nextState = RideLeft;
+                nextState = AlignFront;
                 makeTransition = TRUE;
                 ThisEvent.EventType = ES_NO_EVENT;
             }

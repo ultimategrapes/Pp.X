@@ -166,6 +166,7 @@ ES_Event RunHSM(ES_Event ThisEvent) {
                 // Initialize all sub-state machines
                 InitTraverseFieldSubHSM();
                 // now put the machine into the actual initial state
+                // nextState = FindBeacon;
                 nextState = TraverseField;
                 makeTransition = TRUE;
                 ThisEvent.EventType = ES_NO_EVENT;
@@ -181,12 +182,15 @@ ES_Event RunHSM(ES_Event ThisEvent) {
             }
             switch (ThisEvent.EventType) {
                 case BEACON_DETECTED:
-                    PS_Stop();
-                    PS_Backward(BEACON_BACKWARD_SPEED);
-                    ES_Timer_InitTimer(BACKWARD_TIMER, BEACON_BACKWARD_TIMER);
-                    nextState = Stop;
+                    printf("initial beacon detected, going to traverse\n");
+                    nextState = TraverseField;
                     makeTransition = TRUE;
                     ThisEvent.EventType = ES_NO_EVENT;
+                    break;
+                case ES_TIMEOUT:
+                    if (ThisEvent.EventParam == BACKWARD_TIMER) {
+
+                    }
                     break;
                 default:
                     break;
@@ -210,7 +214,7 @@ ES_Event RunHSM(ES_Event ThisEvent) {
             }
             break;
         case Shoot:
-//            printf("shooting now\n");
+            //            printf("shooting now\n");
             if (ThisEvent.EventType == ES_ENTRY) {
                 InitShootSubHSM();
                 ThisEvent.EventType = ES_NO_EVENT;
@@ -238,3 +242,4 @@ ES_Event RunHSM(ES_Event ThisEvent) {
 /*******************************************************************************
  * PRIVATE FUNCTIONS                                                           *
  ******************************************************************************/
+

@@ -117,7 +117,7 @@ uint8_t InitShootSubHSM(void) {
  * from the MainHSM.c calibration note (~1400 ms per 90 deg tank turn @ 700);
  * tune ISZ_TURN_TIME if the base over/under-rotates. */
 #define ISZ_TURN_POWER 700
-#define ISZ_TURN_TIME 2800
+#define ISZ_TURN_TIME 2000
 
 /* ShootState PWM duties, mirroring HSM.X HSMService.c ShootState. The indexer
  * runs at full duty for INDEXER_FULL_TIME to seat the first ball, then drops to
