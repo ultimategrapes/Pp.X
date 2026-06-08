@@ -136,24 +136,29 @@ uint8_t InitTraverseFieldSubHSM(void) {
  * @author J. Edward Carryer, 2011.10.23 19:25
  * @author Gabriel H Elkaim, 2011.10.23 19:25 */
 
+ //timers for alinging to each border
 #define ALINGFRONT_BACKWARD_TIME 500
 #define ALINGRIGHT_BACKWARD_TIME 400
 #define ALINGLEFT_BACKWARD_TIME 400
 
-
+//going from the front border to the right border
 #define FRONTTORIGHT_TURNRIGHT_TIMER 900
 #define FRONTTORIGHT_TURNRIGHT_SPEED 700
 
+\
 #define LEFTTORIGHT_TURNRIGHT_TIMER 900
 #define LEFTTORIGHT_TURNRIGHT_SPEED 700
 
 #define RIGHTTOLEFT_TURNRIGHT_TIMER 900
 #define RIGHTTOLEFT_TURNRIGHT_SPEED 700
 
-
+//when aligning to the right side and turning to go to the isz
+//can also be when u got hit from the left side and are returning to the right side
 #define RIGHTTOISZ_TURNRIGHT_TIMER 1100
 #define RIGHTTOISZ_TURNRIGHT_SPEED 700
 
+//always coming from an obstacle
+//hit on the right side, and going to make the turn 
 #define LEFTTOISZ_TURNRIGHT_TIMER 1100
 #define LEFTTOISZ_TURNRIGHT_SPEED 700
 
