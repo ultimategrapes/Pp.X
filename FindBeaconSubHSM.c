@@ -1,5 +1,14 @@
 /*
  * File: FindBeaconSubHSM.c
+ *
+ * Beacon detection ported from HSM.X (HSMService.c / BeaconEventChecker.c).
+ *
+ * Instead of a continuous 360 sweep that tracks a peak, this uses HSM.X's
+ * incremental "stepped" tank turn: drive briefly with the motors on, then brake
+ * and hold. Beacon ADC samples are only trusted during the motors-off hold,
+ * after the base has had time to settle, and a lock is only declared after a
+ * few consecutive above-threshold samples. This keeps motor noise from
+ * producing a false detection at the wrong orientation.
  */
 
 #include "ES_Configure.h"
@@ -10,46 +19,67 @@
 #include "peashooter.h"
 #include <stdio.h>
 
-#define BEACON_MIN_VALID_PEAK 800
-#define BEACON_SWEEP_SPEED          700
-#define BEACON_SWEEP_360_TIME       4400
-#define BEACON_PEAK_TOLERANCE       30
-#define BEACON_LOCK_COUNT_REQUIRED  2
+/* --- Beacon detection tuning (mirrors HSM.X HSMService.c) --- */
 
-#define BEACON_SAMPLE_TIMER         SAMPLE_TIMER
-#define BEACON_SAMPLE_TIME          50
+/* A sample only counts as a detection above this raw ADC threshold. */
+#define BEACON_DETECT_MIN           700   /* HSM_BEACON_DETECT_MIN */
+
+/* Consecutive motors-off detections required to confirm a lock. A single
+ * sample crossing the threshold can be a transient spike or a reflection at the
+ * wrong orientation; requiring a sustained reading aligns the lock with the
+ * true beacon direction. The count resets on any below-threshold sample and
+ * whenever the base starts moving again. */
+#define BEACON_CONFIRM_COUNT        2     /* HSM_BEACON_CONFIRM_COUNT */
+
+/* Stepped tank turn: drive briefly, then brake and hold. Sampling is only armed
+ * during the motors-off hold. Right motor forward + left motor reverse matches
+ * HSM.X StartLockOnStepDrive(). */
+#define BEACON_TURN_POWER           700   /* HSM_LOCK_TURN_POWER */
+#define BEACON_STEP_DRIVE_TIME      80    /* HSM_LOCK_STEP_DRIVE_TIME_MS */
+#define BEACON_STEP_PAUSE_TIME      250   /* HSM_LOCK_STEP_PAUSE_TIME_MS */
+
+/* Time the base needs to coast to a stop after motors off before a beacon
+ * sample is trustworthy. Also the delay before the first armed sample of each
+ * hold. HSM.X brakes actively; this base only coasts (PS_Stop), so the settle
+ * window is what keeps motor-spin noise out of the reading. */
+#define BEACON_SETTLE_TIME          80    /* HSM_BEACON_SETTLE_MS */
+
+/* Cadence of the remaining armed samples taken during a single hold. */
+#define BEACON_SAMPLE_INTERVAL      30
+
+#define BEACON_STEP_TIMER           SWEEP_TIMER   /* drive/hold phase timing */
+#define BEACON_SAMPLE_TIMER         SAMPLE_TIMER  /* armed sample cadence */
 
 typedef enum {
     InitPSubState,
-    SweepBeacon,
     LockToBeacon,
     BeaconFound,
 } FindBeaconSubHSMState_t;
 
 static const char *StateNames[] = {
     "InitPSubState",
-    "SweepBeacon",
     "LockToBeacon",
     "BeaconFound",
 };
 
 static FindBeaconSubHSMState_t CurrentState = InitPSubState;
+static uint8_t StepDriving = FALSE;
+static uint8_t BeaconDetectCount = 0;
 static uint16_t BeaconPeakValue = 0;
-static uint8_t BeaconLockCount = 0;
 
-static void StartBeaconSweep360(void);
-static void UpdateBeaconSweepMax(void);
-static uint16_t FinishBeaconSweep360(void);
-static void StartBeaconPeakLock(uint16_t peakValue);
-static uint8_t CheckBeaconPeakLock(void);
+static void StartBeaconStepDrive(void);
+static void StartBeaconStepPause(void);
+static uint8_t BeaconSampleIsDetected(uint16_t adcReading);
+static uint8_t CheckBeaconLock(void);
 
 uint8_t InitFindBeaconSubHSM(void)
 {
     ES_Event returnEvent;
 
     CurrentState = InitPSubState;
+    StepDriving = FALSE;
+    BeaconDetectCount = 0;
     BeaconPeakValue = 0;
-    BeaconLockCount = 0;
 
     returnEvent = RunFindBeaconSubHSM(INIT_EVENT);
 
@@ -67,50 +97,9 @@ ES_Event RunFindBeaconSubHSM(ES_Event ThisEvent)
 
         case InitPSubState:
             if (ThisEvent.EventType == ES_INIT) {
-                nextState = SweepBeacon;
+                nextState = LockToBeacon;
                 makeTransition = TRUE;
                 ThisEvent.EventType = ES_NO_EVENT;
-            }
-            break;
-
-        case SweepBeacon:
-            switch (ThisEvent.EventType) {
-
-                case ES_ENTRY:
-                    StartBeaconSweep360();
-                    ThisEvent.EventType = ES_NO_EVENT;
-                    break;
-
-                case ES_TIMEOUT:
-                    if (ThisEvent.EventParam == BEACON_SAMPLE_TIMER) {
-                        UpdateBeaconSweepMax();
-                        ES_Timer_InitTimer(BEACON_SAMPLE_TIMER,
-                                           BEACON_SAMPLE_TIME);
-                        ThisEvent.EventType = ES_NO_EVENT;
-
-                    } else if (ThisEvent.EventParam == SWEEP_TIMER) {
-    BeaconPeakValue = FinishBeaconSweep360();
-
-    if (BeaconPeakValue >= BEACON_MIN_VALID_PEAK) {
-        nextState = LockToBeacon;
-    } else {
-        printf("Beacon peak too low: %u, sweeping again\n", BeaconPeakValue);
-        nextState = SweepBeacon;
-    }
-
-    makeTransition = TRUE;
-    ThisEvent.EventType = ES_NO_EVENT;
-}
-                    break;
-
-                case ES_EXIT:
-                    ES_Timer_StopTimer(BEACON_SAMPLE_TIMER);
-                    PS_Stop();
-                    ThisEvent.EventType = ES_NO_EVENT;
-                    break;
-
-                default:
-                    break;
             }
             break;
 
@@ -118,33 +107,40 @@ ES_Event RunFindBeaconSubHSM(ES_Event ThisEvent)
             switch (ThisEvent.EventType) {
 
                 case ES_ENTRY:
-                    StartBeaconPeakLock(BeaconPeakValue);
+                    StartBeaconStepDrive();
                     ThisEvent.EventType = ES_NO_EVENT;
                     break;
 
                 case ES_TIMEOUT:
-                    if (ThisEvent.EventParam == BEACON_SAMPLE_TIMER) {
-
-                        if (CheckBeaconPeakLock() == TRUE) {
-                            nextState = BeaconFound;
-                            makeTransition = TRUE;
-                            ThisEvent.EventType = ES_NO_EVENT;
+                    if (ThisEvent.EventParam == BEACON_STEP_TIMER) {
+                        /* One increment of the stepped turn finished. */
+                        if (StepDriving == TRUE) {
+                            StartBeaconStepPause();
                         } else {
-                            ES_Timer_InitTimer(BEACON_SAMPLE_TIMER,
-                                               BEACON_SAMPLE_TIME);
-                            ThisEvent.EventType = ES_NO_EVENT;
+                            /* Hold ended with no confirmed lock: keep turning. */
+                            StartBeaconStepDrive();
                         }
+                        ThisEvent.EventType = ES_NO_EVENT;
 
-                    } else if (ThisEvent.EventParam == SWEEP_TIMER) {
-                        PS_Stop();
-
-                        nextState = SweepBeacon;
-                        makeTransition = TRUE;
+                    } else if (ThisEvent.EventParam == BEACON_SAMPLE_TIMER) {
+                        /* Armed sample. Readings taken while the motors are
+                         * running are ignored so motor noise cannot complete a
+                         * lock during the step drive. */
+                        if (StepDriving == FALSE) {
+                            if (CheckBeaconLock() == TRUE) {
+                                nextState = BeaconFound;
+                                makeTransition = TRUE;
+                            } else {
+                                ES_Timer_InitTimer(BEACON_SAMPLE_TIMER,
+                                                   BEACON_SAMPLE_INTERVAL);
+                            }
+                        }
                         ThisEvent.EventType = ES_NO_EVENT;
                     }
                     break;
 
                 case ES_EXIT:
+                    ES_Timer_StopTimer(BEACON_STEP_TIMER);
                     ES_Timer_StopTimer(BEACON_SAMPLE_TIMER);
                     PS_Stop();
                     ThisEvent.EventType = ES_NO_EVENT;
@@ -156,26 +152,26 @@ ES_Event RunFindBeaconSubHSM(ES_Event ThisEvent)
             break;
 
         case BeaconFound:
-    switch (ThisEvent.EventType) {
+            switch (ThisEvent.EventType) {
 
-        case ES_ENTRY:
-            ES_Timer_StopTimer(BEACON_SAMPLE_TIMER);
-            ES_Timer_StopTimer(SWEEP_TIMER);
-            PS_Stop();
+                case ES_ENTRY:
+                    ES_Timer_StopTimer(BEACON_STEP_TIMER);
+                    ES_Timer_StopTimer(BEACON_SAMPLE_TIMER);
+                    PS_Stop();
 
-            ThisEvent.EventType = BEACON_DETECTED;
-            ThisEvent.EventParam = BeaconPeakValue;
+                    ThisEvent.EventType = BEACON_DETECTED;
+                    ThisEvent.EventParam = BeaconPeakValue;
+                    break;
+
+                case ES_EXIT:
+                    ThisEvent.EventType = ES_NO_EVENT;
+                    break;
+
+                default:
+                    ThisEvent.EventType = ES_NO_EVENT;
+                    break;
+            }
             break;
-
-        case ES_EXIT:
-            ThisEvent.EventType = ES_NO_EVENT;
-            break;
-
-        default:
-            ThisEvent.EventType = ES_NO_EVENT;
-            break;
-    }
-    break;
 
         default:
             break;
@@ -191,96 +187,69 @@ ES_Event RunFindBeaconSubHSM(ES_Event ThisEvent)
     return ThisEvent;
 }
 
-static void StartBeaconSweep360(void)
+/* One increment of the stepped tank turn: drive briefly with the motors on.
+ * Samples taken now are corrupted by motor noise, so sampling is disarmed and
+ * the detection count is cleared so confirmation must accumulate within one
+ * stationary hold. */
+static void StartBeaconStepDrive(void)
 {
-    BeaconPeakValue = 0;
-    BeaconLockCount = 0;
+    StepDriving = TRUE;
+    BeaconDetectCount = 0;
 
-    PS_TankTurnRightContinuous(BEACON_SWEEP_SPEED);
-
-    ES_Timer_InitTimer(SWEEP_TIMER, BEACON_SWEEP_360_TIME);
-    ES_Timer_InitTimer(BEACON_SAMPLE_TIMER, BEACON_SAMPLE_TIME);
-}
-
-static void UpdateBeaconSweepMax(void)
-{
-    uint16_t beaconReading;
-
-    beaconReading = PS_ReadBeacon();
-
-    printf("Beacon sweep sample: %u\n", beaconReading);
-
-    if (beaconReading > BeaconPeakValue) {
-        BeaconPeakValue = beaconReading;
-    }
-
-    printf("Beacon sweep processed: sample=%u peak=%u\n",
-           beaconReading,
-           BeaconPeakValue);
-}
-
-static uint16_t FinishBeaconSweep360(void)
-{
     ES_Timer_StopTimer(BEACON_SAMPLE_TIMER);
+
+    PS_RightMtrSpeed(BEACON_TURN_POWER);
+    PS_LeftMtrReverseSpeed(BEACON_TURN_POWER);
+
+    ES_Timer_InitTimer(BEACON_STEP_TIMER, BEACON_STEP_DRIVE_TIME);
+}
+
+/* Stop and hold so the beacon can be sampled without motor noise. The step
+ * timer bounds the hold; the sample timer fires the first armed sample only
+ * after the settle time so the still-spinning motors cannot corrupt it. */
+static void StartBeaconStepPause(void)
+{
+    StepDriving = FALSE;
+    BeaconDetectCount = 0;
+
     PS_Stop();
 
-    printf("Beacon sweep finished: peak=%u\n", BeaconPeakValue);
-
-    return BeaconPeakValue;
+    ES_Timer_InitTimer(BEACON_STEP_TIMER, BEACON_STEP_PAUSE_TIME);
+    ES_Timer_InitTimer(BEACON_SAMPLE_TIMER, BEACON_SETTLE_TIME);
 }
 
-static void StartBeaconPeakLock(uint16_t peakValue)
+static uint8_t BeaconSampleIsDetected(uint16_t adcReading)
 {
-    BeaconPeakValue = peakValue;
-    BeaconLockCount = 0;
-
-    printf("Beacon lock start: peak=%u target=%u\n",
-           BeaconPeakValue,
-           (BeaconPeakValue > BEACON_PEAK_TOLERANCE)
-               ? (BeaconPeakValue - BEACON_PEAK_TOLERANCE)
-               : 0);
-
-    PS_TankTurnRightContinuous(BEACON_SWEEP_SPEED);
-
-    ES_Timer_InitTimer(SWEEP_TIMER, BEACON_SWEEP_360_TIME);
-    ES_Timer_InitTimer(BEACON_SAMPLE_TIMER, BEACON_SAMPLE_TIME);
+    return (adcReading > BEACON_DETECT_MIN) ? TRUE : FALSE;
 }
 
-static uint8_t CheckBeaconPeakLock(void)
+/* Mirrors HSM_CheckBeaconLockImmediate: require BEACON_CONFIRM_COUNT
+ * consecutive above-threshold samples within one stationary hold. Any
+ * below-threshold sample resets the count. Returns TRUE on a confirmed lock. */
+static uint8_t CheckBeaconLock(void)
 {
-    uint16_t beaconReading;
-    uint16_t target;
+    uint16_t beaconReading = (uint16_t) PS_ReadBeacon();
 
-    beaconReading = PS_ReadBeacon();
+    printf("Beacon lock sample=%u count=%u\n", beaconReading, BeaconDetectCount);
 
-    if (BeaconPeakValue > BEACON_PEAK_TOLERANCE) {
-        target = BeaconPeakValue - BEACON_PEAK_TOLERANCE;
-    } else {
-        target = 0;
+    if (BeaconSampleIsDetected(beaconReading) != TRUE) {
+        BeaconDetectCount = 0;
+        return FALSE;
     }
 
-    printf("Beacon lock sample=%u target=%u count=%u\n",
-           beaconReading,
-           target,
-           BeaconLockCount);
-
-    if (beaconReading >= target) {
-        BeaconLockCount++;
-
-        if (BeaconLockCount >= BEACON_LOCK_COUNT_REQUIRED) {
-            PS_Stop();
-            ES_Timer_StopTimer(SWEEP_TIMER);
-            ES_Timer_StopTimer(BEACON_SAMPLE_TIMER);
-
-            printf("Beacon locked: sample=%u peak=%u\n",
-                   beaconReading,
-                   BeaconPeakValue);
-
-            return TRUE;
-        }
-    } else {
-        BeaconLockCount = 0;
+    if (BeaconDetectCount < BEACON_CONFIRM_COUNT) {
+        BeaconDetectCount++;
     }
 
-    return FALSE;
+    if (BeaconDetectCount < BEACON_CONFIRM_COUNT) {
+        return FALSE;
+    }
+
+    BeaconDetectCount = 0;
+    StepDriving = FALSE;
+    BeaconPeakValue = beaconReading;
+    PS_Stop();
+
+    printf("Beacon locked: sample=%u\n", beaconReading);
+    return TRUE;
 }
