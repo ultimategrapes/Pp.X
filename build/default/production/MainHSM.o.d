@@ -5,10 +5,10 @@ build/default/production/MainHSM.o: MainHSM.c ES_Configure.h \
  ../ECE118/include/ES_LookupTables.h ../ECE118/include/ES_Port.h \
  ../ECE118/include/ES_PostList.h ../ECE118/include/ES_PriorTables.h \
  ../ECE118/include/ES_Queue.h ../ECE118/include/ES_ServiceHeaders.h \
- C:/Users/asus/Documents/ece118/Pp.X/ES_Configure.h \
- C:/Users/asus/Documents/ece118/Pp.X/MainHSM.h \
- C:/Users/asus/Documents/ece118/Pp.X/ES_Configure.h \
- C:/Users/asus/Documents/ece118/Pp.X/peashooter.h \
+ C:/Users/asus/Documents/ECE118Final/Pp.X/ES_Configure.h \
+ C:/Users/asus/Documents/ECE118Final/Pp.X/MainHSM.h \
+ C:/Users/asus/Documents/ECE118Final/Pp.X/ES_Configure.h \
+ C:/Users/asus/Documents/ECE118Final/Pp.X/peashooter.h \
  ../ECE118/include/BOARD.h ../ECE118/include/ES_TattleTale.h MainHSM.h \
  AlignTapeSubHSM.h peashooter.h TraverseFieldSubHSM.h ShootSubHSM.h \
  RideFrontSubHSM.h RideLeftSubHSM.h RideRightSubHSM.h AvoidSubHSM.h \
@@ -40,13 +40,13 @@ ES_Configure.h:
 
 ../ECE118/include/ES_ServiceHeaders.h:
 
-C:/Users/asus/Documents/ece118/Pp.X/ES_Configure.h:
+C:/Users/asus/Documents/ECE118Final/Pp.X/ES_Configure.h:
 
-C:/Users/asus/Documents/ece118/Pp.X/MainHSM.h:
+C:/Users/asus/Documents/ECE118Final/Pp.X/MainHSM.h:
 
-C:/Users/asus/Documents/ece118/Pp.X/ES_Configure.h:
+C:/Users/asus/Documents/ECE118Final/Pp.X/ES_Configure.h:
 
-C:/Users/asus/Documents/ece118/Pp.X/peashooter.h:
+C:/Users/asus/Documents/ECE118Final/Pp.X/peashooter.h:
 
 ../ECE118/include/BOARD.h:
 
