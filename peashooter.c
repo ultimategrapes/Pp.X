@@ -14,6 +14,13 @@
 #define TOP_SHOOTER_PWM PWM_PORTY04
 #define BOT_SHOOTER_PWM PWM_PORTX11
 
+// BTS7960 enable pins for the shooter motor drivers. These must be driven
+// high for the driver output stage to power the motors; PWM alone does nothing.
+#define TOP_SHOOTER_EN      PORTX03_LAT
+#define BOT_SHOOTER_EN      PORTX04_LAT
+#define TOP_SHOOTER_EN_TRIS PORTX03_TRIS
+#define BOT_SHOOTER_EN_TRIS PORTX04_TRIS
+
 // Motor direction outputs use four consecutive Port Y pins: Y05-Y08.
 #define LEFT_IN1 PORTY06_LAT
 #define LEFT_IN2 PORTY05_LAT
@@ -196,6 +203,12 @@ void PS_Init(void) {
 void PS_ShooterInit(void) {
     PWM_AddPins(TOP_SHOOTER_PWM);
     PWM_AddPins(BOT_SHOOTER_PWM);
+
+    // Configure the BTS7960 enable pins as outputs and start them disabled.
+    TOP_SHOOTER_EN_TRIS = 0;
+    BOT_SHOOTER_EN_TRIS = 0;
+    TOP_SHOOTER_EN = 0;
+    BOT_SHOOTER_EN = 0;
 
     PWM_SetDutyCycle(TOP_SHOOTER_PWM, 0);
     PWM_SetDutyCycle(BOT_SHOOTER_PWM, 0);
@@ -531,6 +544,9 @@ char PS_SetTopShooter(unsigned int speed) {
         return ERROR;
     }
 
+    // Enable the driver when commanded to move, disable it when stopping.
+    TOP_SHOOTER_EN = (speed > 0) ? 1 : 0;
+
     dutyCycle = speed * (MAX_PWM / PEASHOOTER_MAX_SPEED);
 
     return PWM_SetDutyCycle(TOP_SHOOTER_PWM, dutyCycle);
@@ -542,6 +558,9 @@ char PS_SetBotShooter(unsigned int speed) {
     if (speed > PEASHOOTER_MAX_SPEED) {
         return ERROR;
     }
+
+    // Enable the driver when commanded to move, disable it when stopping.
+    BOT_SHOOTER_EN = (speed > 0) ? 1 : 0;
 
     dutyCycle = speed * (MAX_PWM / PEASHOOTER_MAX_SPEED);
 
