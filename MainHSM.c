@@ -167,7 +167,7 @@ ES_Event RunHSM(ES_Event ThisEvent) {
                 InitTraverseFieldSubHSM();
                 // now put the machine into the actual initial state
                 // nextState = FindBeacon;
-                nextState = TraverseField;
+                nextState = FindBeacon;
                 makeTransition = TRUE;
                 ThisEvent.EventType = ES_NO_EVENT;
 
