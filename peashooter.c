@@ -193,6 +193,10 @@ void PS_Init(void) {
     PS_RightMotorInit();
     PS_IndexerInit();
 
+    // Add the shooter PWM pins and configure their enable pins so the
+    // shoot state can actually drive the top and bottom shooter motors.
+    PS_ShooterInit();
+
     // Configure switch and tape sensor pins as digital inputs.
     PORTW03_TRIS = 1;
     PORTW04_TRIS = 1;
