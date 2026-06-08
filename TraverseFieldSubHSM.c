@@ -175,7 +175,7 @@ uint8_t InitTraverseFieldSubHSM(void) {
 #define AVOIDRIGHT_FINALTURN_TIME  1200
 
 #define AVOIDLEFT_BACKWARD_SPEED 700
-#define AVOIDLEFT_BACKWARD_TIME  400
+#define AVOIDLEFT_BACKWARD_TIME  300
 #define AVOIDLEFT_TURNRIGHT_SPEED     700
 #define AVOIDLEFT_TURNRIGHT_TIME      850
 #define AVOIDLEFT_TURNLEFT_SPEED     700
@@ -183,7 +183,7 @@ uint8_t InitTraverseFieldSubHSM(void) {
 #define AVOIDLEFT_FORWARD_SPEED  700
 #define AVOIDLEFT_FORWARD_TIME   3200
 #define AVOIDLEFT_FINALTURN_SPEED 700
-#define AVOIDLEFT_FINALTURN_TIME  1200
+#define AVOIDLEFT_FINALTURN_TIME  1000
 
 ES_Event RunTraverseFieldSubHSM(ES_Event ThisEvent) {
     uint8_t makeTransition = FALSE; // use to flag transition
