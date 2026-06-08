@@ -41,16 +41,16 @@
  ******************************************************************************/
 typedef enum {
     InitPSubState,
-    FindBeacon,
-    Rev,
-    Shoot,
+    ISZState,
+    AimLockOnState,
+    ShootState,
 } ShootSubHSMState_t;
 
 static const char *StateNames[] = {
     "InitPSubState",
-    "FindBeacon",
-    "Rev",
-    "Shoot",
+    "ISZState",
+    "AimLockOnState",
+    "ShootState",
 };
 
 
@@ -113,10 +113,21 @@ uint8_t InitShootSubHSM(void) {
  * @author J. Edward Carryer, 2011.10.23 19:25
  * @author Gabriel H Elkaim, 2011.10.23 19:25 */
 
-#define REV_TIME 1000
-#define TOP_SHOOTER_DUTY 850
-#define BOT_SHOOTER_DUTY 350
-#define INDEXER_DUTY 400
+/* ISZ: 180-degree tank turn before the beacon search. Turn time is derived
+ * from the MainHSM.c calibration note (~1400 ms per 90 deg tank turn @ 700);
+ * tune ISZ_TURN_TIME if the base over/under-rotates. */
+#define ISZ_TURN_POWER 700
+#define ISZ_TURN_TIME 2800
+
+/* ShootState PWM duties, mirroring HSM.X HSMService.c ShootState. The indexer
+ * runs at full duty for INDEXER_FULL_TIME to seat the first ball, then drops to
+ * the steady run duty. PS_Set* take 0..PEASHOOTER_MAX_SPEED (1000), so
+ * INDEXER_FULL_DUTY 1000 maps to MAX_PWM (HSM_INDEXER_FULL_DUTY). */
+#define TOP_SHOOTER_DUTY 850      /* HSM_UPPER_SHOOTER_DUTY */
+#define BOT_SHOOTER_DUTY 350      /* HSM_LOWER_SHOOTER_DUTY */
+#define INDEXER_FULL_DUTY 1000    /* HSM_INDEXER_FULL_DUTY (MAX_PWM) */
+#define INDEXER_RUN_DUTY 400      /* HSM_INDEXER_RUN_DUTY */
+#define INDEXER_FULL_TIME 1000    /* HSM_INDEXER_FULL_TIME_MS */
 
 ES_Event RunShootSubHSM(ES_Event ThisEvent) {
     uint8_t makeTransition = FALSE; // use to flag transition
@@ -128,77 +139,89 @@ ES_Event RunShootSubHSM(ES_Event ThisEvent) {
         case InitPSubState: // If current state is initial Psedudo State
             if (ThisEvent.EventType == ES_INIT)// only respond to ES_Init
             {
-                // this is where you would put any actions associated with the
-                // transition from the initial pseudo-state into the actual
-                // initial state
-
                 // now put the machine into the actual initial state
-                nextState = FindBeacon;
+                nextState = ISZState;
                 makeTransition = TRUE;
                 ThisEvent.EventType = ES_NO_EVENT;
             }
             break;
 
-        case FindBeacon:
-    if (ThisEvent.EventType == ES_ENTRY) {
-        InitFindBeaconSubHSM();
-        ThisEvent.EventType = ES_NO_EVENT;
-
-    } else if (ThisEvent.EventType == ES_EXIT) {
-        RunFindBeaconSubHSM(EXIT_EVENT);
-        ThisEvent.EventType = ES_NO_EVENT;
-
-    } else {
-        ThisEvent = RunFindBeaconSubHSM(ThisEvent);
-    }
-
-    switch (ThisEvent.EventType) {
-        case BEACON_DETECTED:
-            printf("SHOOT: BEACON_DETECTED\n");
-            PS_Stop();
-            nextState = Rev;
-            makeTransition = TRUE;
-            ThisEvent.EventType = ES_NO_EVENT;
-            break;
-
-        default:
-            break;
-    }
-    break;
-        case Rev: // in the first state, replace this with correct names
-
+        case ISZState: // 180-degree tank turn, then hand off to the beacon search
             switch (ThisEvent.EventType) {
                 case ES_ENTRY:
-                printf("SHOOT: REV ENTRY\n");
-                PS_Stop();
-                    PS_SetIndexer(800);
-                    PS_SetBotShooter(800);
-                    PS_SetTopShooter(800);
-                    ES_Timer_InitTimer(REV_TIMER, REV_TIME);
+                    printf("SHOOT: ISZ 180 tank turn\n");
+                    PS_Stop();
+                    PS_TankTurnRightContinuous(ISZ_TURN_POWER);
+                    ES_Timer_InitTimer(REV_TIMER, ISZ_TURN_TIME);
+                    ThisEvent.EventType = ES_NO_EVENT;
                     break;
                 case ES_TIMEOUT:
-                    switch (ThisEvent.EventParam) {
-                        case REV_TIMER:
-                            PS_SetIndexer(INDEXER_DUTY);
-                            PS_SetBotShooter(BOT_SHOOTER_DUTY);
-                            PS_SetTopShooter(TOP_SHOOTER_DUTY);
-                            nextState = Shoot;
-                            makeTransition = TRUE;
-                            ThisEvent.EventType = ES_NO_EVENT;
-                            break;
-                        default:
-                            break;
+                    if (ThisEvent.EventParam == REV_TIMER) {
+                        printf("SHOOT: ISZ turn complete -> AIM_LOCK_ON\n");
+                        PS_Stop();
+                        nextState = AimLockOnState;
+                        makeTransition = TRUE;
+                        ThisEvent.EventType = ES_NO_EVENT;
                     }
                     break;
-                default: // all unhandled events pass the event back up to the next level
+                case ES_EXIT:
+                    ES_Timer_StopTimer(REV_TIMER);
+                    PS_Stop();
+                    ThisEvent.EventType = ES_NO_EVENT;
+                    break;
+                default: // pass unhandled events back up to the next level
                     break;
             }
             break;
-        case Shoot:
-        printf("SHOOT: REV ENTRY\n");
-            PS_SetIndexer(INDEXER_DUTY);
-            PS_SetBotShooter(BOT_SHOOTER_DUTY);
-            PS_SetTopShooter(TOP_SHOOTER_DUTY);
+
+        case AimLockOnState: // beacon detection via the stepped tank-turn search
+            if (ThisEvent.EventType == ES_ENTRY) {
+                InitFindBeaconSubHSM();
+                ThisEvent.EventType = ES_NO_EVENT;
+            } else if (ThisEvent.EventType == ES_EXIT) {
+                RunFindBeaconSubHSM(EXIT_EVENT);
+                ThisEvent.EventType = ES_NO_EVENT;
+            } else {
+                ThisEvent = RunFindBeaconSubHSM(ThisEvent);
+            }
+
+            switch (ThisEvent.EventType) {
+                case BEACON_DETECTED:
+                    printf("SHOOT: BEACON_DETECTED -> SHOOT\n");
+                    PS_Stop();
+                    nextState = ShootState;
+                    makeTransition = TRUE;
+                    ThisEvent.EventType = ES_NO_EVENT;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case ShootState: // spin shooters + indexer at the HSM.X PWM duties
+            switch (ThisEvent.EventType) {
+                case ES_ENTRY:
+                    printf("SHOOT: SHOOT top=%d bot=%d indexer full\n",
+                            TOP_SHOOTER_DUTY, BOT_SHOOTER_DUTY);
+                    PS_Stop();
+                    PS_SetTopShooter(TOP_SHOOTER_DUTY);
+                    PS_SetBotShooter(BOT_SHOOTER_DUTY);
+                    PS_SetIndexer(INDEXER_FULL_DUTY);
+                    ES_Timer_InitTimer(REV_TIMER, INDEXER_FULL_TIME);
+                    ThisEvent.EventType = ES_NO_EVENT;
+                    break;
+                case ES_TIMEOUT:
+                    if (ThisEvent.EventParam == REV_TIMER) {
+                        printf("SHOOT: indexer drop to run duty\n");
+                        PS_SetTopShooter(TOP_SHOOTER_DUTY);
+                        PS_SetBotShooter(BOT_SHOOTER_DUTY);
+                        PS_SetIndexer(INDEXER_RUN_DUTY);
+                        ThisEvent.EventType = ES_NO_EVENT;
+                    }
+                    break;
+                default: // pass unhandled events back up to the next level
+                    break;
+            }
             break;
 
         default: // all unhandled states fall into here
