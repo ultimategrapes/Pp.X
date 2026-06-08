@@ -22,7 +22,7 @@
 /* --- Beacon detection tuning (mirrors HSM.X HSMService.c) --- */
 
 /* A sample only counts as a detection above this raw ADC threshold. */
-#define BEACON_DETECT_MIN           700   /* HSM_BEACON_DETECT_MIN */
+#define BEACON_DETECT_MIN           800   /* HSM_BEACON_DETECT_MIN */
 
 /* Consecutive motors-off detections required to confirm a lock. A single
  * sample crossing the threshold can be a transient spike or a reflection at the
