@@ -55,8 +55,10 @@
 typedef enum {
     Init,
     FindBeacon,
+    Backward,
     TraverseField,
     Shoot,
+
     Stop,
 } TemplateHSMState_t;
 
@@ -183,7 +185,7 @@ ES_Event RunHSM(ES_Event ThisEvent) {
             switch (ThisEvent.EventType) {
                 case BEACON_DETECTED:
                     printf("initial beacon detected, going to traverse\n");
-                    nextState = TraverseField;
+                    nextState = Backward;
                     makeTransition = TRUE;
                     ThisEvent.EventType = ES_NO_EVENT;
                     break;
@@ -196,7 +198,24 @@ ES_Event RunHSM(ES_Event ThisEvent) {
                     break;
             }
             break;
-
+        case Backward:
+            switch (ThisEvent.EventType) {
+                case ES_ENTRY:
+                    PS_Backward(700);
+                    ES_Timer_InitTimer(BACKWARD_TIMER, 400);
+                    break;
+                case ES_TIMEOUT:
+                    switch (ThisEvent.EventParam) {
+                        case BACKWARD_TIMER:
+                            PS_Stop();
+                            printf("Finished backward\n");
+                            nextState = TraverseField;
+                            makeTransition = TRUE;
+                            ThisEvent.EventType = ES_NO_EVENT;
+                    }
+                    break;
+            }
+            break;
         case TraverseField: // in the first state, replace this with correct names
             // run sub-state machine for this state
             //NOTE: the SubState Machine runs and responds to events before anything in the this

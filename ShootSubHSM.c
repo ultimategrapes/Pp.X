@@ -33,7 +33,6 @@
 #include "MainHSM.h"
 #include "ShootSubHSM.h"
 #include "peashooter.h"
-#include "FindBeaconSubHSM.h"
 #include <stdio.h>
 
 /*******************************************************************************
@@ -42,14 +41,12 @@
 typedef enum {
     InitPSubState,
     ISZState,
-    AimLockOnState,
     ShootState,
 } ShootSubHSMState_t;
 
 static const char *StateNames[] = {
     "InitPSubState",
     "ISZState",
-    "AimLockOnState",
     "ShootState",
 };
 
@@ -61,6 +58,8 @@ static const char *StateNames[] = {
          ******************************************************************************/
         /* Prototypes for private functions for this machine. They should be functions
            relevant to the behavior of this state machine */
+        static void StartShootTurnStep(void);
+        static void StartShootTurnPause(void);
 
         /*******************************************************************************
          * PRIVATE MODULE VARIABLES                                                            *
@@ -70,6 +69,21 @@ static const char *StateNames[] = {
 
         static ShootSubHSMState_t CurrentState = InitPSubState; // <- change name to match ENUM
 static uint8_t MyPriority;
+
+/* ShootState stall-recovery phase: FALSE = indexer driving, TRUE = power cut
+ * for the brief unstick window before the next breakaway kick. */
+static uint8_t IndexerUnsticking = FALSE;
+
+/* ShootState sweep phase: TRUE = drive motors tank-turning (one step),
+ * FALSE = holding at the current angle so balls fire before the next step. */
+static uint8_t ShootTurnStepping = FALSE;
+
+/* Bounded-sweep tracking: the base ping-pongs over a 90 deg arc from its
+ * post-180 start. ShootSweepGoingRight is the current turn direction;
+ * ShootSweepElapsed accumulates active-turn ms in that direction and triggers a
+ * reversal once it reaches SHOOT_SWEEP_TURN_TIME (one 90 deg edge). */
+static uint8_t ShootSweepGoingRight = TRUE;
+static uint16_t ShootSweepElapsed = 0;
 
 
 /*******************************************************************************
@@ -113,11 +127,11 @@ uint8_t InitShootSubHSM(void) {
  * @author J. Edward Carryer, 2011.10.23 19:25
  * @author Gabriel H Elkaim, 2011.10.23 19:25 */
 
-/* ISZ: 180-degree tank turn before the beacon search. Turn time is derived
+/* ISZ: 180-degree tank turn before the shoot sweep. Turn time is derived
  * from the MainHSM.c calibration note (~1400 ms per 90 deg tank turn @ 700);
  * tune ISZ_TURN_TIME if the base over/under-rotates. */
 #define ISZ_TURN_POWER 700
-#define ISZ_TURN_TIME 2000
+#define ISZ_TURN_TIME 1800
 
 /* ShootState PWM duties, mirroring HSM.X HSMService.c ShootState. The indexer
  * runs at full duty for INDEXER_FULL_TIME to seat the first ball, then drops to
@@ -126,8 +140,39 @@ uint8_t InitShootSubHSM(void) {
 #define TOP_SHOOTER_DUTY 850      /* HSM_UPPER_SHOOTER_DUTY */
 #define BOT_SHOOTER_DUTY 350      /* HSM_LOWER_SHOOTER_DUTY */
 #define INDEXER_FULL_DUTY 1000    /* HSM_INDEXER_FULL_DUTY (MAX_PWM) */
-#define INDEXER_RUN_DUTY 450      /* HSM_INDEXER_RUN_DUTY */
+#define INDEXER_RUN_DUTY 1000      /* HSM_INDEXER_RUN_DUTY */
 #define INDEXER_FULL_TIME 1000    /* HSM_INDEXER_FULL_TIME_MS */
+
+/* Open-loop stall recovery. The indexer has no encoder or current sense and
+ * runs on a single-direction PWM pin, so once it stalls on a ball or a cogging
+ * dead-spot at a fixed duty it cannot supply its own breakaway torque to
+ * restart -- you have to nudge it by hand. To do that automatically we cycle
+ * the drive: run normally for INDEXER_KICK_PERIOD, then cut power for
+ * INDEXER_UNSTICK_TIME so a stalled rotor relaxes, then slam full duty to get a
+ * fresh breakaway kick. Tune the two periods to taste (longer kick period =
+ * less stutter when healthy, shorter = faster stall recovery). */
+#define INDEXER_KICK_PERIOD 350   /* ms of normal drive between recovery pulses */
+#define INDEXER_UNSTICK_TIME 45   /* ms of power-off to let a stalled rotor relax */
+
+/* Shoot sweep: after the ISZ 180 the base ping-pongs over a bounded 90 deg arc
+ * while the shooters and indexer run, spraying balls across the region. From the
+ * post-180 start it step-turns right until it has covered SHOOT_SWEEP_TURN_TIME
+ * (one 90 deg edge), then step-turns left back to the start, and repeats. Each
+ * step drives the base briefly (SHOOT_STEP_DRIVE_TIME) then holds
+ * (SHOOT_STEP_PAUSE_TIME) so shots land at the current angle. This runs on
+ * SWEEP_TIMER, independent of the REV_TIMER indexer cycling -- PS_Stop() only
+ * zeroes the drive motors, so the shooters/indexer keep running across a step.
+ * Tune power for step torque, the two times for step size and dwell. */
+#define SHOOT_TURN_POWER 500      /* same magnitude/direction as ISZ_TURN_POWER */
+#define SHOOT_STEP_DRIVE_TIME 150 /* ms of turning per increment (step size) --
+                                   * must exceed the base's spin-up time (~50-150ms)
+                                   * or each step is a twitch that looks stationary */
+#define SHOOT_STEP_PAUSE_TIME 300 /* ms held at each angle to let balls fire */
+
+/* Total active-turn time for one 90 deg sweep edge. The ISZ turn is a known 180
+ * at the same power, so half its time is 90 deg and tracks the same turn
+ * calibration automatically -- retune by adjusting ISZ_TURN_TIME. */
+#define SHOOT_SWEEP_TURN_TIME (1400 / 2)
 
 ES_Event RunShootSubHSM(ES_Event ThisEvent) {
     uint8_t makeTransition = FALSE; // use to flag transition
@@ -146,7 +191,7 @@ ES_Event RunShootSubHSM(ES_Event ThisEvent) {
             }
             break;
 
-        case ISZState: // 180-degree tank turn, then hand off to the beacon search
+        case ISZState: // 180-degree tank turn, then go straight to the shoot sweep
             switch (ThisEvent.EventType) {
                 case ES_ENTRY:
                     printf("SHOOT: ISZ 180 tank turn\n");
@@ -157,9 +202,9 @@ ES_Event RunShootSubHSM(ES_Event ThisEvent) {
                     break;
                 case ES_TIMEOUT:
                     if (ThisEvent.EventParam == REV_TIMER) {
-                        printf("SHOOT: ISZ turn complete -> AIM_LOCK_ON\n");
+                        printf("SHOOT: ISZ turn complete -> SHOOT (no beacon)\n");
                         PS_Stop();
-                        nextState = AimLockOnState;
+                        nextState = ShootState;
                         makeTransition = TRUE;
                         ThisEvent.EventType = ES_NO_EVENT;
                     }
@@ -174,30 +219,6 @@ ES_Event RunShootSubHSM(ES_Event ThisEvent) {
             }
             break;
 
-        case AimLockOnState: // beacon detection via the stepped tank-turn search
-            if (ThisEvent.EventType == ES_ENTRY) {
-                InitFindBeaconSubHSM();
-                ThisEvent.EventType = ES_NO_EVENT;
-            } else if (ThisEvent.EventType == ES_EXIT) {
-                RunFindBeaconSubHSM(EXIT_EVENT);
-                ThisEvent.EventType = ES_NO_EVENT;
-            } else {
-                ThisEvent = RunFindBeaconSubHSM(ThisEvent);
-            }
-
-            switch (ThisEvent.EventType) {
-                case BEACON_DETECTED:
-                    printf("SHOOT: BEACON_DETECTED -> SHOOT\n");
-                    PS_Stop();
-                    nextState = ShootState;
-                    makeTransition = TRUE;
-                    ThisEvent.EventType = ES_NO_EVENT;
-                    break;
-                default:
-                    break;
-            }
-            break;
-
         case ShootState: // spin shooters + indexer at the HSM.X PWM duties
             switch (ThisEvent.EventType) {
                 case ES_ENTRY:
@@ -207,17 +228,61 @@ ES_Event RunShootSubHSM(ES_Event ThisEvent) {
                     PS_SetTopShooter(TOP_SHOOTER_DUTY);
                     PS_SetBotShooter(BOT_SHOOTER_DUTY);
                     PS_SetIndexer(INDEXER_FULL_DUTY);
+                    IndexerUnsticking = FALSE; // start in the driving phase
                     ES_Timer_InitTimer(REV_TIMER, INDEXER_FULL_TIME);
+                    ShootSweepGoingRight = TRUE; // sweep right to +90, back to start, repeat
+                    ShootSweepElapsed = 0;
+                    StartShootTurnStep(); // begin the bounded shoot sweep
                     ThisEvent.EventType = ES_NO_EVENT;
                     break;
                 case ES_TIMEOUT:
-                    if (ThisEvent.EventParam == REV_TIMER) {
-                        printf("SHOOT: indexer drop to run duty\n");
-                        PS_SetTopShooter(TOP_SHOOTER_DUTY);
-                        PS_SetBotShooter(BOT_SHOOTER_DUTY);
-                        PS_SetIndexer(INDEXER_RUN_DUTY);
+                    if (ThisEvent.EventParam == SWEEP_TIMER) {
+                        // Shoot sweep step boundary: alternate a turn step with a
+                        // hold so balls fire at each angle. Drive motors only; the
+                        // shooters/indexer keep running.
+                        if (ShootTurnStepping) {
+                            // A turn step just finished: bank the angle covered and
+                            // reverse direction once we reach the 90 deg edge (or
+                            // come back to the start).
+                            ShootSweepElapsed += SHOOT_STEP_DRIVE_TIME;
+                            if (ShootSweepElapsed >= SHOOT_SWEEP_TURN_TIME) {
+                                ShootSweepGoingRight = !ShootSweepGoingRight;
+                                ShootSweepElapsed = 0;
+                            }
+                            StartShootTurnPause();
+                        } else {
+                            StartShootTurnStep();
+                        }
+                        ThisEvent.EventType = ES_NO_EVENT;
+                    } else if (ThisEvent.EventParam == REV_TIMER) {
+                        // Shooters were commanded on entry; only the indexer is
+                        // cycled here for stall recovery.
+                        if (!IndexerUnsticking) {
+                            // Drive window elapsed: cut power briefly so a
+                            // stalled rotor can relax before the next kick.
+                            PS_SetIndexer(0);
+                            IndexerUnsticking = TRUE;
+                            ES_Timer_InitTimer(REV_TIMER, INDEXER_UNSTICK_TIME);
+                        } else {
+                            // Re-apply full duty for maximum breakaway torque,
+                            // then resume the drive window.
+                            PS_SetIndexer(INDEXER_RUN_DUTY);
+                            IndexerUnsticking = FALSE;
+                            ES_Timer_InitTimer(REV_TIMER, INDEXER_KICK_PERIOD);
+                        }
                         ThisEvent.EventType = ES_NO_EVENT;
                     }
+                    break;
+                case ES_EXIT:
+                    // Stop both timers, the drive base, and all shoot outputs so
+                    // nothing keeps running (or fires stray timeouts) after Shoot.
+                    ES_Timer_StopTimer(REV_TIMER);
+                    ES_Timer_StopTimer(SWEEP_TIMER);
+                    PS_Stop();
+                    PS_SetIndexer(0);
+                    PS_SetTopShooter(0);
+                    PS_SetBotShooter(0);
+                    ThisEvent.EventType = ES_NO_EVENT;
                     break;
                 default: // pass unhandled events back up to the next level
                     break;
@@ -242,3 +307,27 @@ ES_Event RunShootSubHSM(ES_Event ThisEvent) {
 /*******************************************************************************
  * PRIVATE FUNCTIONS                                                           *
  ******************************************************************************/
+
+/* One increment of the shoot sweep: tank-turn in the current sweep direction for
+ * SHOOT_STEP_DRIVE_TIME. Touches the drive motors only -- the shooters and
+ * indexer set on ShootState entry keep running. */
+static void StartShootTurnStep(void)
+{
+    ShootTurnStepping = TRUE;
+    if (ShootSweepGoingRight) {
+        PS_TankTurnRightContinuous(SHOOT_TURN_POWER);
+    } else {
+        PS_TankTurnLeftContinuous(SHOOT_TURN_POWER);
+    }
+    ES_Timer_InitTimer(SWEEP_TIMER, SHOOT_STEP_DRIVE_TIME);
+}
+
+/* Hold between increments for SHOOT_STEP_PAUSE_TIME so balls fire at the current
+ * angle before the next step. PS_Stop() zeroes only the drive motors, so the
+ * shooters and indexer are unaffected. */
+static void StartShootTurnPause(void)
+{
+    ShootTurnStepping = FALSE;
+    PS_Stop();
+    ES_Timer_InitTimer(SWEEP_TIMER, SHOOT_STEP_PAUSE_TIME);
+}
