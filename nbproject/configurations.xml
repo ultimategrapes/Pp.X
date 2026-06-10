@@ -4,27 +4,27 @@
     <logicalFolder name="HeaderFiles"
                    displayName="Header Files"
                    projectFiles="true">
-      <itemPath>../ECE118/include/BOARD.h</itemPath>
-      <itemPath>../ECE118/include/ES_CheckEvents.h</itemPath>
-      <itemPath>../ECE118/include/ES_Events.h</itemPath>
-      <itemPath>../ECE118/include/ES_Framework.h</itemPath>
-      <itemPath>../ECE118/include/ES_General.h</itemPath>
-      <itemPath>../ECE118/include/ES_KeyboardInput.h</itemPath>
-      <itemPath>../ECE118/include/ES_LookupTables.h</itemPath>
-      <itemPath>../ECE118/include/ES_Port.h</itemPath>
-      <itemPath>../ECE118/include/ES_PostList.h</itemPath>
-      <itemPath>../ECE118/include/ES_PriorTables.h</itemPath>
-      <itemPath>../ECE118/include/ES_Queue.h</itemPath>
-      <itemPath>../ECE118/include/ES_ServiceHeaders.h</itemPath>
-      <itemPath>../ECE118/include/ES_TattleTale.h</itemPath>
-      <itemPath>../ECE118/include/ES_Timers.h</itemPath>
-      <itemPath>../ECE118/include/IO_Ports.h</itemPath>
-      <itemPath>../ECE118/include/LED.h</itemPath>
-      <itemPath>../ECE118/include/RC_Servo.h</itemPath>
-      <itemPath>../ECE118/include/pwm.h</itemPath>
-      <itemPath>../ECE118/include/roach.h</itemPath>
-      <itemPath>../ECE118/include/serial.h</itemPath>
-      <itemPath>../ECE118/include/timers.h</itemPath>
+      <itemPath>include/BOARD.h</itemPath>
+      <itemPath>include/ES_CheckEvents.h</itemPath>
+      <itemPath>include/ES_Events.h</itemPath>
+      <itemPath>include/ES_Framework.h</itemPath>
+      <itemPath>include/ES_General.h</itemPath>
+      <itemPath>include/ES_KeyboardInput.h</itemPath>
+      <itemPath>include/ES_LookupTables.h</itemPath>
+      <itemPath>include/ES_Port.h</itemPath>
+      <itemPath>include/ES_PostList.h</itemPath>
+      <itemPath>include/ES_PriorTables.h</itemPath>
+      <itemPath>include/ES_Queue.h</itemPath>
+      <itemPath>include/ES_ServiceHeaders.h</itemPath>
+      <itemPath>include/ES_TattleTale.h</itemPath>
+      <itemPath>include/ES_Timers.h</itemPath>
+      <itemPath>include/IO_Ports.h</itemPath>
+      <itemPath>include/LED.h</itemPath>
+      <itemPath>include/RC_Servo.h</itemPath>
+      <itemPath>include/pwm.h</itemPath>
+      <itemPath>include/roach.h</itemPath>
+      <itemPath>include/serial.h</itemPath>
+      <itemPath>include/timers.h</itemPath>
       <itemPath>ES_Configure.h</itemPath>
       <itemPath>MainHSM.h</itemPath>
       <itemPath>AllEventChecker.h</itemPath>
@@ -52,21 +52,21 @@
     <logicalFolder name="SourceFiles"
                    displayName="Source Files"
                    projectFiles="true">
-      <itemPath>../ECE118/src/BOARD.c</itemPath>
-      <itemPath>../ECE118/src/ES_CheckEvents.c</itemPath>
-      <itemPath>../ECE118/src/ES_Framework.c</itemPath>
-      <itemPath>../ECE118/src/ES_KeyboardInput.c</itemPath>
-      <itemPath>../ECE118/src/ES_PostList.c</itemPath>
-      <itemPath>../ECE118/src/ES_Queue.c</itemPath>
-      <itemPath>../ECE118/src/ES_TattleTale.c</itemPath>
-      <itemPath>../ECE118/src/ES_Timers.c</itemPath>
-      <itemPath>../ECE118/src/IO_Ports.c</itemPath>
-      <itemPath>../ECE118/src/LED.c</itemPath>
-      <itemPath>../ECE118/src/RC_Servo.c</itemPath>
-      <itemPath>../ECE118/src/pwm.c</itemPath>
-      <itemPath>../ECE118/src/roach.c</itemPath>
-      <itemPath>../ECE118/src/serial.c</itemPath>
-      <itemPath>../ECE118/src/timers.c</itemPath>
+      <itemPath>src/BOARD.c</itemPath>
+      <itemPath>src/ES_CheckEvents.c</itemPath>
+      <itemPath>src/ES_Framework.c</itemPath>
+      <itemPath>src/ES_KeyboardInput.c</itemPath>
+      <itemPath>src/ES_PostList.c</itemPath>
+      <itemPath>src/ES_Queue.c</itemPath>
+      <itemPath>src/ES_TattleTale.c</itemPath>
+      <itemPath>src/ES_Timers.c</itemPath>
+      <itemPath>src/IO_Ports.c</itemPath>
+      <itemPath>src/LED.c</itemPath>
+      <itemPath>src/RC_Servo.c</itemPath>
+      <itemPath>src/pwm.c</itemPath>
+      <itemPath>src/roach.c</itemPath>
+      <itemPath>src/serial.c</itemPath>
+      <itemPath>src/timers.c</itemPath>
       <itemPath>TemplateService.c</itemPath>
       <itemPath>ES_Main.c</itemPath>
       <itemPath>AllEventChecker.c</itemPath>
@@ -97,11 +97,11 @@
         <targetPluginBoard></targetPluginBoard>
         <platformTool>Simulator</platformTool>
         <languageToolchain>XC32</languageToolchain>
-        <languageToolchainVersion>4.35</languageToolchainVersion>
+        <languageToolchainVersion>5.10</languageToolchainVersion>
         <platform>3</platform>
       </toolsSet>
       <packs>
-        <pack name="PIC32MX_DFP" vendor="Microchip" version="1.5.259"/>
+        <pack name="PIC32MX_DFP" vendor="Microchip" version="1.6.369"/>
       </packs>
       <ScriptingSettings>
       </ScriptingSettings>
@@ -138,8 +138,7 @@
         <property key="enable-symbols" value="true"/>
         <property key="enable-unroll-loops" value="false"/>
         <property key="exclude-floating-point" value="false"/>
-        <property key="extra-include-directories"
-                  value="C:\Users\asus\Documents\ECE118Final\Pp.X;src;include"/>
+        <property key="extra-include-directories" value=".;src;include"/>
         <property key="generate-16-bit-code" value="false"/>
         <property key="generate-micro-compressed-code" value="false"/>
         <property key="isolate-each-function" value="false"/>
